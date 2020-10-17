@@ -34,7 +34,7 @@ int segmentPins[7] = {6, 8, 9, 11, 10, 5, 7};
 #define gnd1 3
 #define gnd2 4
 
-#define MAX_VOLUME 60
+#define MAX_VOLUME 10
 #define ADR 0x41 // адрес MCU I2C
 
 enum INPUTS { AUX, PC, BLUETOOTH };
@@ -52,7 +52,7 @@ struct {
   INPUTS inputCh = AUX;
   int bass = 0;
   int treble = 0;
-  int volume = 20;
+  int volume = 2;
 } main;
 
 struct {
