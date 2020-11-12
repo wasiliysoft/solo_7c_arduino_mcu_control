@@ -193,7 +193,7 @@ void displaySetInt(int i) {
 }
 
 void processCode(unsigned long irCode) {
-  if (main.isMute && results.value != P_MUTE) {
+  if (main.isMute && results.value != P_MUTE && results.value != 2155807485) {
     return;
   }
 
@@ -202,6 +202,7 @@ void processCode(unsigned long irCode) {
   case P_IN_SEL:
     switchInputCh();
     return;
+  case 2155807485:
   case P_MUTE:
     switchMute();
     return;
@@ -209,43 +210,48 @@ void processCode(unsigned long irCode) {
 
   // обработка команд которые должны поддерживать удержание
   switch (irCode) {
+  case 2155836045:
   case P_IN_AU:
     setInputAndDisplayAUX();
     break;
+  case 2155851855:
   case P_IN_PC:
     setInputAndDisplayPC();
     break;
-  case P_IN_BT:
-    setInpeutAndDisplayBluetooth();
-    break;
-
+    // case P_IN_BT:
+    //   setInpeutAndDisplayBluetooth();
+    //   break;
+  case 2155813095:
   case P_VOL_UP:
     main.volume++;
     main.volume = constrain(main.volume, 0, MAX_VOLUME);
     displaySetInt(main.volume);
     break;
+  case 2155809015:
   case P_VOL_DOWN:
     main.volume--;
     main.volume = constrain(main.volume, 0, MAX_VOLUME);
     displaySetInt(main.volume);
     break;
-
+  case 2155815135:
   case P_BASS_UP:
     main.bass++;
     main.bass = constrain(main.bass, -7, 7);
     displaySetInt(main.bass);
     break;
+  case 2155831965:
   case P_BASS_DOWN:
     main.bass--;
     main.bass = constrain(main.bass, -7, 7);
     displaySetInt(main.bass);
     break;
-
+  case 2155811055:
   case P_TREB_UP:
     main.treble++;
     main.treble = constrain(main.treble, -7, 7);
     displaySetInt(main.treble);
     break;
+  case 2155827885:
   case P_TREB_DOWN:
     main.treble--;
     main.treble = constrain(main.treble, -7, 7);
