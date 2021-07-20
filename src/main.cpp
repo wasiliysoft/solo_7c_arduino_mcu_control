@@ -34,11 +34,11 @@ int segmentPins[7] = {6, 8, 9, 11, 10, 5, 7};
 #define gnd1 3
 #define gnd2 4
 
-#define MAX_VOLUME 20
+#define MAX_VOLUME 60
 #define ADR 0x41 // адрес MCU I2C
 
-uint8_t dB[] = {120, 92, 76, 64, 56, 48, 42, 37, 32, 28,
-                24,  20, 17, 14, 12, 9,  7,  4,  2,  0};
+// uint8_t dB[] = {120, 92, 76, 64, 56, 48, 42, 37, 32, 28,
+//                 24,  20, 17, 14, 12, 9,  7,  4,  2,  0};
 enum INPUTS { AUX, PC, BLUETOOTH };
 
 IRrecv IrReceiver(2); // вывод, к которому подключен приемник
@@ -54,7 +54,7 @@ struct {
   INPUTS inputCh = AUX;
   int bass = 0;
   int treble = 0;
-  int volume = 5;
+  int volume = 20;
 } main;
 
 struct {
@@ -273,8 +273,9 @@ void updateMCUState() {
     Wire.write(255); // Data L
     Wire.write(255); // Data R
   } else {
-    Wire.write(dB[main.volume]); // Data L
-    Wire.write(dB[main.volume]); // Data R
+    int vol = 96 - ((float) main.volume * 1.6f);
+    Wire.write(vol); // Data L
+    Wire.write(vol); // Data R
   }
 
   // INPUT
