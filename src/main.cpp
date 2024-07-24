@@ -1,6 +1,6 @@
+#include <Arduino.h>
 #include "GyverTimer.h"
 #include "IRremote.h"
-#include <Arduino.h>
 #include <Wire.h>
 #include <avr/pgmspace.h>
 
@@ -29,7 +29,7 @@
 //                           |--G--|
 //                         E |     | C
 //                            --D--
-// int sigmentPins[7] = {A, B, C, D, E, F, G};
+//                   {A, B, C, D, E,   F, G};
 int segmentPins[7] = {6, 8, 9, 11, 10, 5, 7};
 #define gnd1 3
 #define gnd2 4
@@ -37,9 +37,7 @@ int segmentPins[7] = {6, 8, 9, 11, 10, 5, 7};
 #define MAX_VOLUME 60
 #define ADR 0x41 // адрес MCU I2C
 
-// uint8_t dB[] = {120, 92, 76, 64, 56, 48, 42, 37, 32, 28,
-//                 24,  20, 17, 14, 12, 9,  7,  4,  2,  0};
-enum INPUTS { AUX, PC, BLUETOOTH };
+enum INPUTS { AUX, PC};
 
 IRrecv IrReceiver(2); // вывод, к которому подключен приемник
 decode_results results;
@@ -70,7 +68,6 @@ dispStruct dispState;
 void displayTick();
 void displaySetInt(int i);
 void setInputAndDisplayAUX();
-void setInpeutAndDisplayBluetooth();
 void setInputAndDisplayPC();
 void processCode(unsigned long irCode);
 void updateMCUState();
@@ -149,12 +146,6 @@ void setInputAndDisplayPC() {
   dispState.d2 = B00111001;
 }
 
-void setInpeutAndDisplayBluetooth() {
-  mainState.inputCh = BLUETOOTH;
-  dispState.d1 = B01111111;
-  dispState.d2 = B00111000;
-}
-
 void switchMute() {
   mainState.isMute = !mainState.isMute;
   if (mainState.isMute) {
@@ -171,9 +162,6 @@ void switchInputCh() {
     setInputAndDisplayPC();
     break;
   case PC:
-    setInpeutAndDisplayBluetooth();
-    break;
-  case BLUETOOTH:
     setInputAndDisplayAUX();
     break;
   }
@@ -293,9 +281,6 @@ void updateMCUState() {
       break;
     case PC:
       Wire.write(B00100000);
-      break;
-    case BLUETOOTH:
-      Wire.write(B01000000);
       break;
     }
   }
