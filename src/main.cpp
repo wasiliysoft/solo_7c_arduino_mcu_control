@@ -1,8 +1,22 @@
 #include <Arduino.h>
 #include "GyverTimer.h"
+#include "EncButton.h"
 #include "IRremote.h"
 #include <Wire.h>
 #include <avr/pgmspace.h>
+
+#define KEY_UNDEFINED 0
+#define KEY_REPEAT    1
+#define KEY_MUTE      2
+#define KEY_VOL_UP    3
+#define KEY_VOL_DOWN  4
+#define KEY_BASS_UP   5
+#define KEY_BASS_DOWN 6
+#define KEY_TREB_UP   7
+#define KEY_TREB_DOWN 8
+#define KEY_INPUT_CH  9
+#define KEY_RESET     10
+
 
 #define P_REPEAT_CODE 4294967295
 
@@ -10,9 +24,6 @@
 #define P_VOL_DOWN 16490591
 
 #define P_IN_SEL 16476311
-#define P_IN_AU 83573445
-#define P_IN_PC 83606085
-#define P_IN_BT 83589765
 #define P_MUTE 16460501
 
 #define P_BASS_UP 16494671
@@ -40,15 +51,14 @@ int segmentPins[7] = {6, 8, 9, 11, 10, 5, 7};
 enum INPUTS { AUX, PC};
 
 IRrecv IrReceiver(2); // вывод, к которому подключен приемник
-decode_results results;
-unsigned long irCode = 0;
+EncButton eb(A3, A2, A1); // pin энкодера
 
-GTimer timeOutToProcessNextIrCode;
+
+
 GTimer timeOutToDisplayVolume;
 
 
 typedef struct {
-  bool updateFlag = true;
   bool isMute = true;
   INPUTS inputCh = AUX;
   int bass = 0;
@@ -62,7 +72,7 @@ typedef struct {
   byte d2 = B01000000;
 } dispStruct;
 
-stateStruct mainState;
+stateStruct avrState;
 dispStruct dispState;
 
 void displayTick();
@@ -70,13 +80,15 @@ void displaySetInt(int i);
 void setInputAndDisplayAUX();
 void setInputAndDisplayPC();
 void processCode(unsigned long irCode);
-void updateMCUState();
+void processOneEventKey(unsigned long irCode);
+void syncMCU();
+stateStruct setMCUState(stateStruct newState);
 void switchMute();
 void switchInputCh();
+void irReceiveTick();
 
 void setup() {
   timeOutToDisplayVolume.setTimeout(2000);
-  timeOutToProcessNextIrCode.setTimeout(200);
   for (uint8_t i = 0; i < 7; i++) {
     pinMode(segmentPins[i], OUTPUT);
   }
@@ -85,34 +97,43 @@ void setup() {
 
   Wire.begin();
   IrReceiver.enableIRIn();
+  eb.setEncType(EB_STEP4_LOW);
 
   Serial.begin(9600);
 }
 
 void loop() {
-  if (IrReceiver.decode(&results)) { // если данные пришли
-    if (results.value != P_REPEAT_CODE) {
-      irCode = results.value;
-    }
-    if (timeOutToProcessNextIrCode.isReady()) {
-      processCode(irCode);
-      timeOutToProcessNextIrCode.start();
-      timeOutToDisplayVolume.start();
-      mainState.updateFlag = true;
-    }
-    IrReceiver.resume(); // сброс буфера
+  eb.tick();
+
+  if (eb.click()) processCode(P_MUTE);
+  if (eb.turn()){
+    if(eb.dir()>0) processCode(P_VOL_UP);
+    if(eb.dir()<0) processCode(P_VOL_DOWN);
   }
 
-  if (timeOutToDisplayVolume.isReady() && mainState.isMute == false) {
-    displaySetInt(mainState.volume);
-  }
+  irReceiveTick();
 
-  if (mainState.updateFlag) {
-    updateMCUState();
-    mainState.updateFlag = false;
+  syncMCU();  
+
+  if (timeOutToDisplayVolume.isReady() && avrState.isMute == false) {
+    displaySetInt(avrState.volume);
   }
 
   displayTick();
+}
+
+void irReceiveTick(){
+  static decode_results results;
+  static unsigned long nextReadyTime = 0;
+  if (IrReceiver.decode(&results)) { // если данные пришли
+    if (nextReadyTime < millis()) {
+      processCode(results.value);
+      nextReadyTime =  millis() + 200;
+    }else if (results.value != P_REPEAT_CODE){
+      processCode(results.value);
+    }
+    IrReceiver.resume(); // сброс буфера
+  }
 }
 
 void displayTick() {
@@ -135,29 +156,29 @@ void displayTick() {
 }
 
 void setInputAndDisplayAUX() {
-  mainState.inputCh = AUX;
+  avrState.inputCh = AUX;
   dispState.d1 = B01110111;
   dispState.d2 = B00111110;
 }
 
 void setInputAndDisplayPC() {
-  mainState.inputCh = PC;
+  avrState.inputCh = PC;
   dispState.d1 = B01110011;
   dispState.d2 = B00111001;
 }
 
 void switchMute() {
-  mainState.isMute = !mainState.isMute;
-  if (mainState.isMute) {
+  avrState.isMute = !avrState.isMute;
+  if (avrState.isMute) {
     dispState.d1 = B01000000;
     dispState.d2 = B01000000;
   } else {
-    displaySetInt(mainState.volume);
+    displaySetInt(avrState.volume);
   }
 }
 
 void switchInputCh() {
-  switch (mainState.inputCh) {
+  switch (avrState.inputCh) {
   case AUX:
     setInputAndDisplayPC();
     break;
@@ -184,98 +205,99 @@ void displaySetInt(int i) {
   }
 }
 
+
 void processCode(unsigned long irCode) {
-  if (mainState.isMute && results.value != P_MUTE && results.value != 2155807485) {
-    return;
+  
+  if (avrState.isMute && irCode != P_MUTE) return;
+  
+  static unsigned long lastIrKey = 0;
+
+  if(irCode != P_REPEAT_CODE){
+    lastIrKey = irCode;
+    // обработка команд которые НЕ ДОЛЖНЫ поддерживать удержание
+    switch (lastIrKey) {
+      case P_IN_SEL:
+        switchInputCh();
+        break;
+      case P_MUTE:
+        switchMute();
+        break;
+      }
   }
-
-  // обработка команд которые НЕ ДОЛЖНЫ поддерживать удержание
-  switch (results.value) {
-  case P_IN_SEL:
-    switchInputCh();
-    return;
-  case 2155807485:
-  case P_MUTE:
-    switchMute();
-    return;
-  }
-
-  // обработка команд которые должны поддерживать удержание
-  switch (irCode) {
-  case 2155836045:
-  case P_IN_AU:
-    setInputAndDisplayAUX();
-    break;
-  case 2155851855:
-  case P_IN_PC:
-    setInputAndDisplayPC();
-    break;
-    // case P_IN_BT:
-    //   setInpeutAndDisplayBluetooth();
-    //   break;
-  case 2155813095:
-  case P_VOL_UP:
-    mainState.volume++;
-    mainState.volume = constrain(mainState.volume, 0, MAX_VOLUME);
-    displaySetInt(mainState.volume);
-    break;
-  case 2155809015:
-  case P_VOL_DOWN:
-    mainState.volume--;
-    mainState.volume = constrain(mainState.volume, 0, MAX_VOLUME);
-    displaySetInt(mainState.volume);
-    break;
-  case 2155815135:
-  case P_BASS_UP:
-    mainState.bass++;
-    mainState.bass = constrain(mainState.bass, -7, 7);
-    displaySetInt(mainState.bass);
-    break;
-  case 2155831965:
-  case P_BASS_DOWN:
-    mainState.bass--;
-    mainState.bass = constrain(mainState.bass, -7, 7);
-    displaySetInt(mainState.bass);
-    break;
-  case 2155811055:
-  case P_TREB_UP:
-    mainState.treble++;
-    mainState.treble = constrain(mainState.treble, -7, 7);
-    displaySetInt(mainState.treble);
-    break;
-  case 2155827885:
-  case P_TREB_DOWN:
-    mainState.treble--;
-    mainState.treble = constrain(mainState.treble, -7, 7);
-    displaySetInt(mainState.treble);
-    break;
-
-  default:
-    Serial.print("code ");
-    Serial.println(results.value);
+   
+  switch (lastIrKey) {
+    case P_VOL_UP:
+      avrState.volume++;
+      avrState.volume = constrain(avrState.volume, 0, MAX_VOLUME);
+      displaySetInt(avrState.volume);
+      break;
+    case P_VOL_DOWN:
+      avrState.volume--;
+      avrState.volume = constrain(avrState.volume, 0, MAX_VOLUME);
+      displaySetInt(avrState.volume);
+      break;
+    case P_BASS_UP:
+      avrState.bass++;
+      avrState.bass = constrain(avrState.bass, -7, 7);
+      displaySetInt(avrState.bass);
+      break;
+    case P_BASS_DOWN:
+      avrState.bass--;
+      avrState.bass = constrain(avrState.bass, -7, 7);
+      displaySetInt(avrState.bass);
+      break;
+    case P_TREB_UP:
+      avrState.treble++;
+      avrState.treble = constrain(avrState.treble, -7, 7);
+      displaySetInt(avrState.treble);
+      break;
+    case P_TREB_DOWN:
+      avrState.treble--;
+      avrState.treble = constrain(avrState.treble, -7, 7);
+      displaySetInt(avrState.treble);
+      break;
+    case P_REPEAT_CODE:
+      break;
+    default:
+      Serial.print("code ");
+      Serial.println(lastIrKey);
+      break;
   }
 }
 
-void updateMCUState() {
+ void syncMCU(){
+  static stateStruct mcuState = avrState;
+  if (mcuState.volume != avrState.volume) goto needUpdate;
+  if (mcuState.bass != avrState.bass) goto needUpdate;
+  if (mcuState.treble != avrState.treble) goto needUpdate;
+  if (mcuState.inputCh != avrState.inputCh) goto needUpdate;
+  if (mcuState.isMute != avrState.isMute) goto needUpdate;  
+  return;
+  needUpdate:
+    mcuState = setMCUState(avrState);
+    timeOutToDisplayVolume.start();
+ }
+
+stateStruct setMCUState(stateStruct avrState) {
   Wire.beginTransmission(ADR);
   Wire.write(0); // write mode
 
   // VOLUME
-  if (mainState.volume <= 0) {
+  if (avrState.volume <= 0) {
     Wire.write(255); // Data L
     Wire.write(255); // Data R
   } else {
-    int vol = 96 - ((float) mainState.volume * 1.6f);
+    int vol = 96 - ((float) avrState.volume * 1.6f);
     Wire.write(vol); // Data L
     Wire.write(vol); // Data R
   }
 
   // INPUT
   // todo if mainState.volume = 0 to MUTE
-  if (mainState.isMute) {
+  if (avrState.isMute) {
     Wire.write(B11100000);
   } else {
-    switch (mainState.inputCh) {
+    switch (avrState.inputCh) {
     case AUX:
       Wire.write(B00000000);
       break;
@@ -292,18 +314,19 @@ void updateMCUState() {
 
   // EQ
   byte bass = B00000000;
-  if (mainState.bass > 0) {
+  if (avrState.bass > 0) {
     bass = B10000000;
   }
-  bass = bass | (abs(mainState.bass) << 4);
+  bass = bass | (abs(avrState.bass) << 4);
 
   byte treble = B00000000;
-  if (mainState.treble > 0) {
+  if (avrState.treble > 0) {
     treble = B00001000;
   }
-  treble = treble | abs(mainState.treble);
+  treble = treble | abs(avrState.treble);
 
   Wire.write(bass | treble);
 
   Wire.endTransmission();
+  return avrState;
 }
