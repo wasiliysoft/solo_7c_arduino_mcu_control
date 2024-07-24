@@ -17,21 +17,6 @@
 #define KEY_INPUT_CH  9
 #define KEY_RESET     10
 
-
-#define P_REPEAT_CODE 4294967295
-
-#define P_VOL_UP 16486511
-#define P_VOL_DOWN 16490591
-
-#define P_IN_SEL 16476311
-#define P_MUTE 16460501
-
-#define P_BASS_UP 16494671
-#define P_BASS_DOWN 16462541
-
-#define P_TREB_UP 16484471
-#define P_TREB_DOWN 16452341
-
 #define DISP_DELAY 1
 
 //
@@ -53,8 +38,7 @@ enum INPUTS { AUX, PC};
 IRrecv IrReceiver(2); // вывод, к которому подключен приемник
 EncButton eb(A3, A2, A1); // pin энкодера
 
-
-
+decode_results irRecieveResults;
 GTimer timeOutToDisplayVolume;
 
 
@@ -79,7 +63,8 @@ void displayTick();
 void displaySetInt(int i);
 void setInputAndDisplayAUX();
 void setInputAndDisplayPC();
-void processCode(unsigned long irCode);
+void processKey(unsigned long key);
+int getKeyByCode(unsigned long irCode);
 void processOneEventKey(unsigned long irCode);
 void syncMCU();
 stateStruct setMCUState(stateStruct newState);
@@ -105,10 +90,10 @@ void setup() {
 void loop() {
   eb.tick();
 
-  if (eb.click()) processCode(P_MUTE);
+  if (eb.click()) processKey(KEY_MUTE);
   if (eb.turn()){
-    if(eb.dir()>0) processCode(P_VOL_UP);
-    if(eb.dir()<0) processCode(P_VOL_DOWN);
+    if(eb.dir()>0) processKey(KEY_VOL_UP);
+    if(eb.dir()<0) processKey(KEY_VOL_DOWN);
   }
 
   irReceiveTick();
@@ -123,14 +108,15 @@ void loop() {
 }
 
 void irReceiveTick(){
-  static decode_results results;
+
   static unsigned long nextReadyTime = 0;
-  if (IrReceiver.decode(&results)) { // если данные пришли
+  if (IrReceiver.decode(&irRecieveResults)) { // если данные пришли
+    int key = getKeyByCode(irRecieveResults.value);
     if (nextReadyTime < millis()) {
-      processCode(results.value);
+      processKey(key);
       nextReadyTime =  millis() + 200;
-    }else if (results.value != P_REPEAT_CODE){
-      processCode(results.value);
+    }else if (key != KEY_REPEAT){
+      processKey(key);
     }
     IrReceiver.resume(); // сброс буфера
   }
@@ -206,62 +192,91 @@ void displaySetInt(int i) {
 }
 
 
-void processCode(unsigned long irCode) {
+void processKey(unsigned long key) {
   
-  if (avrState.isMute && irCode != P_MUTE) return;
+  if (avrState.isMute && key != KEY_MUTE) return;
   
-  static unsigned long lastIrKey = 0;
+  static unsigned long lastKey = 0;
 
-  if(irCode != P_REPEAT_CODE){
-    lastIrKey = irCode;
+  if(key != KEY_REPEAT){
+    lastKey = key;
     // обработка команд которые НЕ ДОЛЖНЫ поддерживать удержание
-    switch (lastIrKey) {
-      case P_IN_SEL:
+    switch (lastKey) {
+      case KEY_INPUT_CH:
         switchInputCh();
         break;
-      case P_MUTE:
+      case KEY_MUTE:
         switchMute();
         break;
       }
   }
    
-  switch (lastIrKey) {
-    case P_VOL_UP:
+  switch (lastKey) {
+    case KEY_VOL_UP:
       avrState.volume++;
       avrState.volume = constrain(avrState.volume, 0, MAX_VOLUME);
       displaySetInt(avrState.volume);
       break;
-    case P_VOL_DOWN:
+    case KEY_VOL_DOWN:
       avrState.volume--;
       avrState.volume = constrain(avrState.volume, 0, MAX_VOLUME);
       displaySetInt(avrState.volume);
       break;
-    case P_BASS_UP:
+    case KEY_BASS_UP:
       avrState.bass++;
       avrState.bass = constrain(avrState.bass, -7, 7);
       displaySetInt(avrState.bass);
       break;
-    case P_BASS_DOWN:
+    case KEY_BASS_DOWN:
       avrState.bass--;
       avrState.bass = constrain(avrState.bass, -7, 7);
       displaySetInt(avrState.bass);
       break;
-    case P_TREB_UP:
+    case KEY_TREB_UP:
       avrState.treble++;
       avrState.treble = constrain(avrState.treble, -7, 7);
       displaySetInt(avrState.treble);
       break;
-    case P_TREB_DOWN:
+    case KEY_TREB_DOWN:
       avrState.treble--;
       avrState.treble = constrain(avrState.treble, -7, 7);
       displaySetInt(avrState.treble);
       break;
-    case P_REPEAT_CODE:
-      break;
-    default:
-      Serial.print("code ");
-      Serial.println(lastIrKey);
-      break;
+  }
+}
+
+int getKeyByCode(unsigned long irCode){
+  switch(irCode){
+    case 16460501: 
+    case 2155823295: // original Solo 7C
+      return KEY_MUTE;
+    case 16476311: 
+    case 2155815135: // original Solo 7C
+      return KEY_INPUT_CH;
+    case 16486511: 
+    case 2155841655: // original Solo 7C
+      return KEY_VOL_UP;
+    case 16490591: 
+    case 2155809015: // original Solo 7C
+      return KEY_VOL_DOWN;
+    case 16494671: 
+    case 2155827375: // original Solo 7C
+      return KEY_BASS_UP;
+    case 16462541: 
+    case 2155835535: // original Solo 7C
+      return KEY_BASS_DOWN;
+    case 16484471: 
+    case 2155843695: // original Solo 7C
+      return KEY_TREB_UP;
+    case 16452341: 
+    case 2155851855: // original Solo 7C
+      return KEY_TREB_DOWN;
+    case 4294967295: 
+      return KEY_REPEAT;
+    default: 
+      Serial.print("not defined case for code ");
+      Serial.println(irCode);
+      return KEY_UNDEFINED;
   }
 }
 
