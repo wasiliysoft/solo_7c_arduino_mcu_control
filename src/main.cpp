@@ -37,6 +37,7 @@ enum INPUTS { AUX, PC};
 
 IRrecv IrReceiver(2); // вывод, к которому подключен приемник
 EncButton eb(A3, A2, A1); // pin энкодера
+int encMode = 0;
 
 decode_results irRecieveResults;
 GTimer timeOutToDisplayVolume;
@@ -61,6 +62,7 @@ dispStruct dispState;
 
 void displayTick();
 void displaySetInt(int i);
+void displaySetDigit_Config(int i);
 void setInputAndDisplayAUX();
 void setInputAndDisplayPC();
 void processKey(unsigned long key);
@@ -71,9 +73,10 @@ stateStruct setMCUState(stateStruct newState);
 void switchMute();
 void switchInputCh();
 void irReceiveTick();
+void encoderTick();
 
 void setup() {
-  timeOutToDisplayVolume.setTimeout(2000);
+  timeOutToDisplayVolume.setTimeout(3000);
   for (uint8_t i = 0; i < 7; i++) {
     pinMode(segmentPins[i], OUTPUT);
   }
@@ -88,23 +91,64 @@ void setup() {
 }
 
 void loop() {
-  eb.tick();
-
-  if (eb.click()) processKey(KEY_MUTE);
-  if (eb.turn()){
-    if(eb.dir()>0) processKey(KEY_VOL_UP);
-    if(eb.dir()<0) processKey(KEY_VOL_DOWN);
-  }
-
+  encoderTick();
   irReceiveTick();
 
   syncMCU();  
 
   if (timeOutToDisplayVolume.isReady() && avrState.isMute == false) {
     displaySetInt(avrState.volume);
+    encMode = 0;
   }
 
   displayTick();
+}
+
+void encoderTick(){
+  eb.tick();
+  
+  if(avrState.isMute) {
+    if (eb.turn()){
+      processKey(KEY_MUTE);
+    }
+    return;
+  }
+  
+  if (eb.click()){
+      encMode++;
+      if (encMode >3) encMode=0;
+      displaySetDigit_Config(encMode);
+  }
+  
+  if(encMode == 0){
+    if (eb.turn()){
+      if(eb.dir()>0) processKey(KEY_VOL_UP);
+      if(eb.dir()<0) processKey(KEY_VOL_DOWN);
+    }
+  }
+  if(encMode == 1){
+    if (eb.turn()){
+      if(eb.dir()>0) processKey(KEY_BASS_UP);
+      if(eb.dir()<0) processKey(KEY_BASS_DOWN);
+    }
+  }
+  if(encMode == 2){
+    if (eb.turn()){
+      if(eb.dir()>0) processKey(KEY_TREB_UP);
+      if(eb.dir()<0) processKey(KEY_TREB_DOWN);
+    }
+  }
+  if(encMode == 3){
+    if (eb.turn()){
+      processKey(KEY_INPUT_CH);
+    }
+  }
+
+  // кнопка удерживается, смотрим сколько
+  if (eb.holdFor()>1000) {
+    stateStruct defaultState;
+    avrState = defaultState;
+  }
 }
 
 void irReceiveTick(){
@@ -191,6 +235,14 @@ void displaySetInt(int i) {
   }
 }
 
+void displaySetDigit_Config(int i) {
+  static const byte nums[10] = {B00111111, B00000110, B01011011, B01001111,
+                                B01100110, B01101101, B01111101, B00000111,
+                                B01111111, B01100111};
+  i = constrain(i, 0, 9);
+  dispState.d1 = B00111001; // C
+  dispState.d2 = nums[abs(i)];
+}
 
 void processKey(unsigned long key) {
   
